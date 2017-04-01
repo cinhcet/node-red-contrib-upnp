@@ -14,7 +14,8 @@
   },
   "node-red": {
     "nodes": {
-      "upnp-action": "upnp/upnp-action.js"
+      "upnp-action": "upnp/upnp-action.js",
+      "upnp-discovery": "upnp/upnp-discovery.js"
     }
   }
 }
