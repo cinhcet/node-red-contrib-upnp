@@ -1,0 +1,20 @@
+{
+  "name": "node-red-contrib-upnp",
+  "version": "0.0.1",
+  "description": "upnp",
+  "keywords": [
+    "node-red",
+    "upnp"
+  ],
+  "author": "cinhcet@gmail.com",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "node-ssdp": "^3.2.0",
+    "upnp-device-client": "^1.0.2"
+  },
+  "node-red": {
+    "nodes": {
+      "upnp-action": "upnp/upnp-action.js"
+    }
+  }
+}

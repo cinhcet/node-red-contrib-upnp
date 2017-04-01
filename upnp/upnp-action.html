@@ -1,0 +1,31 @@
+<script type="text/javascript">
+  RED.nodes.registerType('upnp-action', {
+    category: 'upnp',
+    color: '#a6bbcf',
+    defaults: {
+      url: {value: ""},
+      name: {value: ""}
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: "file.png",
+    label: function() {
+      return this.name || "UPnP Action";
+    }
+  });
+</script>
+
+<script type="text/x-red" data-template-name="upnp-action">
+  <div class="form-row">
+    <label for="node-input-url"><i class="icon-bookmark"></i> Device description URL</label>
+    <input type="text" id="node-input-url">
+  </div>
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/x-red" data-help-name="upnp-action">
+  <p>UPnP</p>
+</script>
