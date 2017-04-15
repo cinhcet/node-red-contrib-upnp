@@ -10,11 +10,11 @@
   "license": "Apache-2.0",
   "dependencies": {
     "node-ssdp": "^3.2.0",
-    "upnp-device-client": "^1.0.2"
+    "node-upnp-control-point": "cinhcet/node-upnp-control-point"
   },
   "node-red": {
     "nodes": {
-      "upnp-action": "upnp/upnp-action.js",
+      "upnp": "upnp/upnp.js",
       "upnp-discovery": "upnp/upnp-discovery.js"
     }
   }

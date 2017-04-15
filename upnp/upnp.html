@@ -1,0 +1,131 @@
+<!--
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+
+<!-- configuration node -->
+
+<script type="text/x-red" data-template-name="upnp-configuration">
+  <div class="form-row">
+    <label for="node-config-input-deviceDescriptionUrl"><i class="icon-bookmark"></i> Device Description URL</label>
+    <input type="text" id="node-config-input-deviceDescriptionUrl">
+  </div>
+</script>
+
+<script type="text/javascript">
+  RED.nodes.registerType('upnp-configuration', {
+    category: 'config',
+    defaults: {
+      deviceDescriptionUrl: {
+        value: '',
+        required: true
+      }
+    },
+    label: function() {
+      return this.deviceDescriptionUrl;
+    }
+  });
+</script>
+
+<!-- ////////////////////////////////////////////////////////////////////// -->
+
+
+<!-- upnp invoke action node -->
+
+<script type="text/javascript">
+  RED.nodes.registerType('upnp-invokeAction', {
+    category: 'upnp',
+    color: '#a6bbcf',
+    defaults: {
+      upnpConfiguration: {
+        value: "",
+        required: true,
+        type: "upnp-configuration"
+      },
+      name: {
+        value: ""
+      }
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: "bridge-dash.png",
+    label: function() {
+      return this.name || "UPnP Invoke Action";
+    }
+  });
+</script>
+
+<script type="text/x-red" data-template-name="upnp-invokeAction">
+  <div class="form-row">
+    <label for="node-input-upnpConfiguration"><i class="fa fa-globe"></i> UPnP Configuration</label>
+    <input type="text" id="node-input-upnpConfiguration">
+  </div>
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/x-red" data-help-name="upnp-invokeAction">
+  <p>UPnP</p>
+</script>
+
+<!-- ////////////////////////////////////////////////////////////////////// -->
+
+
+<!-- upnp receive event node -->
+
+<script type="text/javascript">
+  RED.nodes.registerType('upnp-receiveEvent', {
+    category: 'upnp',
+    color: '#a6bbcf',
+    defaults: {
+      upnpConfiguration: {
+        value: "",
+        required: true,
+        type: "upnp-configuration"
+      },
+      serviceType: {
+        value: '',
+        required: true
+      },
+      name: {
+        value: ""
+      }
+    },
+    inputs: 0,
+    outputs: 1,
+    icon: "bridge-dash.png",
+    label: function() {
+      return this.name || "UPnP Receive Event";
+    }
+  });
+</script>
+
+<script type="text/x-red" data-template-name="upnp-receiveEvent">
+  <div class="form-row">
+    <label for="node-input-upnpConfiguration"><i class="fa fa-globe"></i> UPnP Configuration</label>
+    <input type="text" id="node-input-upnpConfiguration">
+  </div>
+  <div class="form-row">
+    <label for="node-input-serviceType"><i class="icon-bookmark"></i> Service Type</label>
+    <input type="text" id="node-input-serviceType">
+  </div>
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/x-red" data-help-name="upnp-receiveEvent">
+  <p>UPnP</p>
+</script>
