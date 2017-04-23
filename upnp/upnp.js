@@ -152,7 +152,9 @@ module.exports = function(RED) {
       node.upnpClient.subscribe(serviceType, function(err) {
         if(err) {
           node.error(err);
-          node.eventSubscriptions.delete(serviceType);
+          if(node.eventSubscriptions) {
+            node.eventSubscriptions.delete(serviceType);
+          }
         }
       });
     }
