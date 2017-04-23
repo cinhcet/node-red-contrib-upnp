@@ -16,8 +16,12 @@
 
 <script type="text/x-red" data-template-name="upnp-configuration">
   <div class="form-row">
-    <label for="node-config-input-deviceDescriptionUrl"><i class="icon-bookmark"></i> Device Description URL</label>
-    <input type="text" id="node-config-input-deviceDescriptionUrl">
+    <label for="node-config-input-uuid"><i class="icon-bookmark"></i> Device UUID</label>
+    <input type="text" id="node-config-input-uuid">
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-config-input-name" placeholder="Name">
   </div>
 </script>
 
@@ -25,13 +29,16 @@
   RED.nodes.registerType('upnp-configuration', {
     category: 'config',
     defaults: {
-      deviceDescriptionUrl: {
+      uuid: {
         value: '',
         required: true
+      },
+      name: {
+        value: ''
       }
     },
     label: function() {
-      return this.deviceDescriptionUrl;
+      return this.name + ((this.name !== '') ? ':' : '') + this.uuid;
     }
   });
 </script>
