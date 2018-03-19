@@ -136,3 +136,128 @@
 <script type="text/x-red" data-help-name="upnp-receiveEvent">
   <p>UPnP</p>
 </script>
+
+<!-- ////////////////////////////////////////////////////////////////////// -->
+
+
+
+<!-- upnp media renderer node -->
+
+<script type="text/javascript">
+  RED.nodes.registerType('upnp-mediaRenderer', {
+    category: 'upnp',
+    color: '#a6bbcf',
+    defaults: {
+      upnpConfiguration: {
+        value: "",
+        required: true,
+        type: "upnp-configuration"
+      },
+      name: {
+        value: ""
+      }
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: "bridge-dash.png",
+    label: function() {
+      return this.name || "UPnP Media Renderer";
+    }
+  });
+</script>
+
+<script type="text/x-red" data-template-name="upnp-mediaRenderer">
+  <div class="form-row">
+    <label for="node-input-upnpConfiguration"><i class="fa fa-globe"></i> UPnP Media Renderer Configuration</label>
+    <input type="text" id="node-input-upnpConfiguration">
+  </div>
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/x-red" data-help-name="upnp-mediaRenderer">
+  <p>UPnP</p>
+</script>
+
+<!-- ////////////////////////////////////////////////////////////////////// -->
+
+
+
+<!-- upnp media content browser node -->
+
+<script type="text/javascript">
+  RED.nodes.registerType('upnp-mediaContentBrowser', {
+    category: 'upnp',
+    color: '#a6bbcf',
+    defaults: {
+      upnpConfiguration: {
+        value: "",
+        required: true,
+        type: "upnp-configuration"
+      },
+      name: {
+        value: ""
+      }
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: "bridge-dash.png",
+    label: function() {
+      return this.name || "UPnP Media Content Browser";
+    }
+  });
+</script>
+
+<script type="text/x-red" data-template-name="upnp-mediaContentBrowser">
+  <div class="form-row">
+    <label for="node-input-upnpConfiguration"><i class="fa fa-globe"></i> UPnP Media Content Browser Configuration</label>
+    <input type="text" id="node-input-upnpConfiguration">
+  </div>
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/x-red" data-help-name="upnp-mediaContentBrowser">
+  <p>UPnP</p>
+</script>
+
+<!-- ////////////////////////////////////////////////////////////////////// -->
+
+
+
+<!-- upnp playlist node -->
+
+<script type="text/javascript">
+  RED.nodes.registerType('upnp-playlist', {
+    category: 'upnp',
+    color: '#a6bbcf',
+    defaults: {
+      name: {
+        value: ""
+      }
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: "bridge-dash.png",
+    label: function() {
+      return this.name || "UPnP Playlist";
+    }
+  });
+</script>
+
+<script type="text/x-red" data-template-name="upnp-playlist">
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/x-red" data-help-name="upnp-playlist">
+  <p>UPnP</p>
+</script>
+
+<!-- ////////////////////////////////////////////////////////////////////// -->

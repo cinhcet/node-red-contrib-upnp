@@ -19,6 +19,7 @@ module.exports = function(RED) {
   var UPnPClient = require('node-upnp-control-point');
   var SSDP = require('node-ssdp').Client;
   var EventEmitter = require('events').EventEmitter;
+  var xml2js = require('xml2js');
 
   var POLLING_INTERVAL = 10000;
   var DISCOVERY_TIMEOUT = 5000;
@@ -76,9 +77,7 @@ module.exports = function(RED) {
         node.deviceFound = false;
       }
     });
-    node.pollTimeout = setTimeout(function() {
-      node.pollDevice();
-    }, POLLING_INTERVAL);
+    node.pollTimeout = setTimeout(node.pollDevice.bind(node), POLLING_INTERVAL);
   }
 
   upnpConfigurationNode.prototype.initDevice = function(deviceDescriptionUrl) {
@@ -293,4 +292,394 @@ module.exports = function(RED) {
   }
   RED.nodes.registerType("upnp-receiveEvent", upnpReceiveEvent);
 
+////////////////////////////////////////////////////////////////////////////////
+
+
+  function upnpMediaRenderer(config) {
+    RED.nodes.createNode(this, config);
+    var node = this;
+    node.upnpConfiguration = RED.nodes.getNode(config.upnpConfiguration);
+
+    node.status({fill: "red", shape: "ring", text: "not discovered"});
+
+    node.on('input', function(m) {
+      if(node.upnpConfiguration.deviceFound) {
+        if(m.hasOwnProperty('payload')) {
+          if(m.payload === 'play') {
+            node.setMedia(m, function(err) {
+              if(!err) {
+                var serviceType = 'urn:schemas-upnp-org:service:AVTransport:1';
+                var action = 'Play';
+                var params = {InstanceID: '0', Speed: '1'};
+                node.invokeAction(action, params, serviceType);
+              }
+            });
+          } else if(m.payload === 'stop') {
+            var action = 'Stop';
+            var serviceType = 'urn:schemas-upnp-org:service:AVTransport:1';
+            var params = {InstanceID: 0};
+            node.invokeAction(action, params, serviceType);
+          } else if(m.payload === 'pause') {
+            var action = 'Pause';
+            var serviceType = 'urn:schemas-upnp-org:service:AVTransport:1';
+            var params = {InstanceID: 0};
+            node.invokeAction(action, params, serviceType);
+          } else if(m.payload === 'setMedia') {
+            node.setMedia(m);
+          }
+        }
+      }
+    });
+
+
+    node.statusObject = {};
+    node.pollTimer = null;
+
+    node.upnpConfiguration.eventEmitter.on('deviceDiscovery', deviceDiscoveryCallback);
+
+    function deviceDiscoveryCallback(discovered) {
+      var serviceType = 'urn:schemas-upnp-org:service:AVTransport:1';
+      if(discovered) {
+        node.status({fill: "green", shape: "dot", text: "discovered"});
+        node.upnpConfiguration.upnpClient.on('eventListenServerListening', function(listening) {
+          if(listening) {
+            node.upnpConfiguration.subscribe(serviceType);
+          }
+        });
+        node.upnpConfiguration.upnpClient.on('upnpEvent', function(eventMessage) {
+          if(serviceType === eventMessage.serviceType) {
+            if(eventMessage['events'] && eventMessage['events']['LastChange']) {
+              var parseXML = require('xml2js').parseString;
+              parseXML(eventMessage['events']['LastChange'], {explicitArray: false}, function(err, parsedData) {
+                if(err) {
+                  node.warn(err);
+                } else {
+                  if(parsedData.hasOwnProperty('Event') && parsedData['Event'].hasOwnProperty('InstanceID')) {
+                    parsedData = parsedData['Event']['InstanceID'];
+                    // Deleting useless data, if someone really needs those, they can be added easily...
+                    if(parsedData['RecordMediumWriteStatus']) delete parsedData['RecordMediumWriteStatus'];
+                    if(parsedData['CurrentRecordQualityMode']) delete parsedData['CurrentRecordQualityMode'];
+                    if(parsedData['PossibleRecordStorageMedia']) delete parsedData['PossibleRecordStorageMedia'];
+                    if(parsedData['PossibleRecordQualityModes']) delete parsedData['PossibleRecordQualityModes'];
+                    if(parsedData['RecordStorageMedium']) delete parsedData['RecordStorageMedium'];
+                    // TODO reorder data into more js friendly structure
+                    Object.assign(node.statusObject, parsedData);
+
+                    if(node.statusObject['TransportState']['$']['val'] === 'PLAYING') {
+                      clearInterval(node.pollTimer);
+                      node.pollTimer = setInterval(function() { node.pollTimerFunction(); }, 1000);
+                    } else {
+                      clearInterval(node.pollTimer);
+                    }
+
+                    var returnMsg = {payload: node.statusObject};
+                    node.send(returnMsg);
+                  }
+                }
+              });
+            }
+          }
+        });
+      } else {
+        node.status({fill: "red", shape: "ring", text: "not discovered"});
+      }
+    }
+
+    node.on('close', function() {
+      node.upnpConfiguration.eventEmitter.removeListener('deviceDiscovery', deviceDiscoveryCallback);
+      clearInterval(node.pollTimer);
+    });
+
+  }
+
+  upnpMediaRenderer.prototype.pollTimerFunction = function() {
+    var node  = this;
+    var serviceType = 'urn:schemas-upnp-org:service:AVTransport:1';
+    var action = 'GetPositionInfo';
+    var params = {InstanceID: 0};
+    node.invokeAction(action, params, serviceType, function(err, result) {
+      if(!err) {
+        if(result['GetPositionInfoResponse']) {
+          Object.assign(node.statusObject, result['GetPositionInfoResponse']);
+          var returnMsg = {payload: node.statusObject};
+          node.send(returnMsg);
+        }
+      }
+    });
+  }
+
+  upnpMediaRenderer.prototype.setMedia = function(m, callback) {
+    var node = this;
+    if(m.hasOwnProperty('rawDIDL') && m.hasOwnProperty('rawDIDL')) {
+      var serviceType = 'urn:schemas-upnp-org:service:AVTransport:1';
+      var action = 'SetAVTransportURI';
+      var params = {InstanceID: 0, CurrentURI: m.uri, CurrentURIMetaData: m.rawDIDL};
+      node.invokeAction(action, params, serviceType, callback);
+    } else if(m['item'] && m.item['res'] && m.item['res'][0] && m.item['res'][0]['_']) {
+      var serviceType = 'urn:schemas-upnp-org:service:AVTransport:1';
+      var action = 'SetAVTransportURI';
+      var metadata = node.createMetadata(m.item);
+      var uri = m.item['res'][0]['_'];
+      var params = {InstanceID: 0, CurrentURI: uri, CurrentURIMetaData: metadata};
+      node.invokeAction(action, params, serviceType, callback);
+    } else {
+      callback();
+    }
+  }
+
+  upnpMediaRenderer.prototype.invokeAction = function(action, params, serviceType, callback) {
+    var node = this;
+    if(node.upnpConfiguration && node.upnpConfiguration.upnpClient && node.upnpConfiguration.deviceFound) {
+      node.upnpConfiguration.upnpClient.invokeActionParsed(action, params, serviceType, function(err, result) {
+        if(err) {
+          node.warn(err + '; RAW: ' + result);
+        }
+        if(callback) {
+          callback(err, result);
+        }
+      });
+    }
+  }
+
+  upnpMediaRenderer.prototype.createMetadata = function(item) {
+    var xmlBuilder = new xml2js.Builder({headless: true, renderOpts: {'pretty': false}});
+    var obj = {item: item};
+    var xmlMetadata = '<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">';
+    xmlMetadata += xmlBuilder.buildObject(obj);
+    xmlMetadata += '</DIDL-Lite>';
+    return xmlMetadata;
+  }
+
+  RED.nodes.registerType("upnp-mediaRenderer", upnpMediaRenderer);
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+  function upnpMediaContentBrowser(config) {
+    RED.nodes.createNode(this, config);
+    var node = this;
+    node.upnpConfiguration = RED.nodes.getNode(config.upnpConfiguration);
+
+    node.status({fill: "red", shape: "ring", text: "not discovered"});
+
+    node.on('input', function(m) {
+      if(node.upnpConfiguration.deviceFound) {
+        if(m.hasOwnProperty('payload')) {
+          if(m.payload === 'browse') {
+            var objectID = '0';
+            if(m.hasOwnProperty('objectID')) {
+              objectID = m.objectID;
+            }
+            node.browseObjectID(objectID, function(err, browseReturn) {
+              if(!err) {
+                m.payload = 'browseReturn';
+                if(browseReturn.children) {
+                  m.children = browseReturn.children;
+                }
+                if(browseReturn.metadata) {
+                  m.metadata = browseReturn.metadata;
+                }
+                node.send(m);
+              }
+            });
+          } else if(m.payload === 'getAllItems') {
+            if(m.hasOwnProperty('objectID')) {
+              var objectID = m.objectID;
+              // TODO
+            } else {
+              node.warn('objectID missing');
+            }
+          } else if(m.payload === 'getMetadata') {
+            if(m.hasOwnProperty('objectID')) {
+              var objectID = m.objectID;
+              node.browseContent(objectID, 'metadata', true, null, function(err, result) {
+                if(!err) {
+                  if(result.obj && Object.keys(result.obj).length) {
+                    var temp = result.obj;
+                    Object.assign(m, temp);
+                    Object.assign(m, {rawXML: result.rawXML});
+                    m.payload = 'metadataReturn';
+                    node.send(m);
+                  }
+                }
+              });
+            } else {
+              node.warn('objectID missing');
+            }
+          }
+        }
+      }
+    });
+
+    node.upnpConfiguration.eventEmitter.on('deviceDiscovery', deviceDiscoveryCallback);
+
+    function deviceDiscoveryCallback(discovered) {
+      if(discovered) {
+        node.status({fill: "green", shape: "dot", text: "discovered"});
+      } else {
+        node.status({fill: "red", shape: "ring", text: "not discovered"});
+      }
+    }
+
+    node.on('close', function() {
+      node.upnpConfiguration.eventEmitter.removeListener('deviceDiscovery', deviceDiscoveryCallback);
+    });
+  }
+
+  upnpMediaContentBrowser.prototype.browseObjectID = function(objectID, callback) {
+    var node = this;
+    var returnObj = {};
+    node.browseContent(objectID, 'children', false, null, function(err, result) {
+      if(err) {
+        callback(err);
+      }
+      if(result.obj && Object.keys(result.obj).length) {
+        var temp = result.obj;
+        //Object.assign(temp, {rawXML: result.rawXML});
+        returnObj.children = temp;
+      }
+      node.browseContent(objectID, 'metadata', false, null, function(err, result) {
+        if(err) {
+          callback(err);
+        }
+        if(result.obj && Object.keys(result.obj).length) {
+          var temp = result.obj;
+          //Object.assign(temp, {rawXML: result.rawXML});
+          returnObj.metadata = temp;
+        }
+        callback(null, returnObj);
+      });
+    });
+  }
+
+  upnpMediaContentBrowser.prototype.browseContent = function(objectID, type, returnRaw, nonDefaultParameter = null, callback) {
+    var node = this;
+    var serviceType = 'urn:schemas-upnp-org:service:ContentDirectory:1';
+    var params = {ObjectID: objectID, Filter: "*", StartingIndex:0};
+    if(type === "children") {
+      params.BrowseFlag =  "BrowseDirectChildren";
+    } else if(type === "metadata") {
+      params.BrowseFlag =  "BrowseMetadata";
+    } else {
+      callback(new Error('unknown browse type'));
+    }
+    if(nonDefaultParameter) {
+      Object.assign(params, nonDefaultParameter);
+    }
+    node.upnpConfiguration.upnpClient.invokeActionParsed('Browse', params, serviceType, function(err, result) {
+      if(err) {
+        node.warn(err + '; RAW: ' + result);
+      } else {
+        if(result) {
+          var browseResult = result;
+          if(browseResult['BrowseResponse'] && browseResult['BrowseResponse']['Result']) {
+            browseResult = browseResult['BrowseResponse']['Result'];
+
+            var returnObj = {};
+            if(returnRaw) {
+              returnObj.rawXML = browseResult;
+            }
+
+            var parseXML = require('xml2js').parseString;
+            parseXML(browseResult, {explicitArray: true}, function(err, parsedData) {
+              if(err) {
+                node.warn(err);
+                callback(new Error(err));
+              } else {
+                if(parsedData['DIDL-Lite']) {
+                  returnObj.obj = parsedData['DIDL-Lite'];
+                  delete returnObj.obj['$'];
+                  callback(null, returnObj);
+                } else {
+                  node.warn("Problem with UPnP response");
+                  callback(new Error("Problem with UPnP response"));
+                }
+              }
+            });
+          }
+        }
+      }
+    });
+  }
+
+  RED.nodes.registerType("upnp-mediaContentBrowser", upnpMediaContentBrowser);
+
+
+
+  ////////////////////////////////////////////////////////////////////////////////
+  //< >  |
+
+    function upnpPlaylist(config) {
+      RED.nodes.createNode(this, config);
+      var node = this;
+
+      node.playlistItems = [];
+      node.currentIndex = -1;
+      node.transportState = 'stop';
+
+      node.on('input', function(m) {
+        if(m.hasOwnProperty('payload')) {
+          if(m.payload === 'append') {
+            if(m.hasOwnProperty('item')) {
+              node.playlistItems.push(m.item);
+              node.outputPlaylist();
+            } else {
+              node.warn('Need an item to append');
+            }
+          } else if(m.payload === 'next') {
+            if(node.playlistItems.length > 0) {
+              node.currentIndex++;
+              if(node.currentIndex >= node.playlistItems.length) {
+                node.currentIndex = 0;
+              }
+              node.outputPlayItem();
+            }
+          } else if(m.payload === 'previous') {
+            if(node.playlistItems.length > 0) {
+              node.currentIndex--;
+              if(node.currentIndex < 0) {
+                node.currentIndex = 0;
+              }
+              node.outputPlayItem();
+            }
+          } else if(m.payload === 'clear') {
+            node.playlistItems.length = 0;
+            node.currentIndex = -1;
+          } else if(m.payload === 'remove') {
+
+          } else if(m.payload === 'playSelect') {
+            if(m.hasOwnProperty('number')) {
+              if(node.playlistItems.length > 0 && m.number < node.playlistItems.length && m.number >= 0) {
+                node.currentIndex = m.number;
+                node.transportState = 'play';
+                node.outputPlayItem();
+              }
+            }
+          } else if(m.payload === 'play') {
+            node.transportState = 'play';
+          } else if(m.payload === 'stop') {
+            node.transportState = 'stop';
+          } else if(m.payload === 'pause') {
+            node.transportState = 'pause';
+          } else if(m.payload === 'event') {
+
+          }
+        }
+      });
+    }
+
+    upnpPlaylist.prototype.outputPlayItem = function() {
+      var node = this;
+      if(node.currentIndex >= 0 && node.currentIndex < node.playlistItems.length) {
+        var returnObj = {payload: 'play', item: node.playlistItems[node.currentIndex]};
+        node.send(returnObj);
+      }
+    }
+
+    upnpPlaylist.prototype.outputPlaylist = function() {
+      var node = this;
+      node.send({payload: 'playlist', item: node.playlistItems});
+    }
+
+    RED.nodes.registerType("upnp-playlist", upnpPlaylist);
 }
