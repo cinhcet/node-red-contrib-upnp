@@ -21,6 +21,8 @@ module.exports = function(RED) {
   var EventEmitter = require('events').EventEmitter;
   var xml2js = require('xml2js');
 
+  var UPnPLib = require('../lib/upnpLib');
+
   var POLLING_INTERVAL = 10000;
   var DISCOVERY_TIMEOUT = 5000;
 
@@ -37,9 +39,9 @@ module.exports = function(RED) {
 
     node.deviceFound = false;
 
-    node.eventEmitter.on('deviceDiscovery', function(discoverd) {
-      if(discoverd) {
-        node.log('Device ' + node.uuid + ' discoverd');
+    node.eventEmitter.on('deviceDiscovery', function(discovered) {
+      if(discovered) {
+        node.log('Device ' + node.uuid + ' discovered');
       } else {
         node.log('Device ' + node.uuid + ' lost');
       }
@@ -86,16 +88,16 @@ module.exports = function(RED) {
     node.deviceDescriptionUrl = deviceDescriptionUrl;
     node.upnpClient = new UPnPClient(node.deviceDescriptionUrl);
 
+    node.upnpClient.on('error', function(err) {
+      node.error('UPnP Client Error: ' + err);
+    });
+
     node.deviceFound = true;
     node.eventEmitter.emit('deviceDiscovery', true);
 
     node.upnpClient.createEventListenServer();
 
     node.eventSubscriptions = new Set();
-
-    node.upnpClient.on('error', function(err) {
-      node.error('UPnP Client Error: ' + err);
-    });
 
     node.upnpClient.on('subscribed', function(subMsg) {
       node.log('Subscribed to ' + subMsg.serviceType + ' with SID ' + subMsg.sid);
@@ -356,23 +358,33 @@ module.exports = function(RED) {
                 } else {
                   if(parsedData.hasOwnProperty('Event') && parsedData['Event'].hasOwnProperty('InstanceID')) {
                     parsedData = parsedData['Event']['InstanceID'];
-                    // Deleting useless data, if someone really needs those, they can be added easily...
-                    if(parsedData['RecordMediumWriteStatus']) delete parsedData['RecordMediumWriteStatus'];
-                    if(parsedData['CurrentRecordQualityMode']) delete parsedData['CurrentRecordQualityMode'];
-                    if(parsedData['PossibleRecordStorageMedia']) delete parsedData['PossibleRecordStorageMedia'];
-                    if(parsedData['PossibleRecordQualityModes']) delete parsedData['PossibleRecordQualityModes'];
-                    if(parsedData['RecordStorageMedium']) delete parsedData['RecordStorageMedium'];
-                    // TODO reorder data into more js friendly structure
-                    Object.assign(node.statusObject, parsedData);
 
-                    if(node.statusObject['TransportState']['$']['val'] === 'PLAYING') {
+                    var temp = {};
+                    if(parsedData['CurrentTrackURI']) temp.file = parsedData['CurrentTrackURI']['$']['val'];
+                    if(parsedData['TransportState']) temp.state = parsedData['TransportState']['$']['val'];
+                    if(parsedData['CurrentTrackDuration']) temp.duration = parsedData['CurrentTrackDuration']['$']['val'];
+
+                    if(parsedData['CurrentTrackMetaData'] && parsedData['CurrentTrackMetaData']['$'] && parsedData['CurrentTrackMetaData']['$']['val']) {
+                      UPnPLib.parseRawDIDLItem(parsedData['CurrentTrackMetaData']['$']['val'], function(err, metadata) {
+                        if(err) {
+                          node.warn(err);
+                        } else {
+                          Object.assign(temp, metadata);
+                        }
+                      });
+                    }
+
+
+                    Object.assign(node.statusObject, temp);
+
+                    if(node.statusObject['state'] === 'PLAYING') {
                       clearInterval(node.pollTimer);
                       node.pollTimer = setInterval(function() { node.pollTimerFunction(); }, 1000);
                     } else {
                       clearInterval(node.pollTimer);
                     }
 
-                    var returnMsg = {payload: node.statusObject};
+                    var returnMsg = {payload: 'currentPlayingItem', item: node.statusObject};
                     node.send(returnMsg);
                   }
                 }
@@ -400,8 +412,24 @@ module.exports = function(RED) {
     node.invokeAction(action, params, serviceType, function(err, result) {
       if(!err) {
         if(result['GetPositionInfoResponse']) {
-          Object.assign(node.statusObject, result['GetPositionInfoResponse']);
-          var returnMsg = {payload: node.statusObject};
+          var parsedData = result['GetPositionInfoResponse'];
+          var temp = {};
+          if(parsedData['TrackURI']) temp.file = parsedData['TrackURI'];
+          if(parsedData['TrackDuration']) temp.duration = parsedData['TrackDuration'];
+          if(parsedData['RelTime']) temp.relTime = parsedData['RelTime'];
+          if(parsedData['AbsTime']) temp.absTime = parsedData['AbsTime'];
+          if(parsedData['TrackMetaData']) {
+            UPnPLib.parseRawDIDLItem(parsedData['TrackMetaData'], function(err, metadata) {
+              if(err) {
+                node.warn(err);
+              } else {
+                Object.assign(temp, metadata);
+              }
+            });
+          }
+
+          Object.assign(node.statusObject, temp);
+          var returnMsg = {payload: 'currentPlayingItem', item: node.statusObject};
           node.send(returnMsg);
         }
       }
@@ -460,6 +488,8 @@ module.exports = function(RED) {
     var node = this;
     node.upnpConfiguration = RED.nodes.getNode(config.upnpConfiguration);
 
+    node.mediaBrowser = new UPnPLib.MediaBrowser(node.upnpConfiguration);
+
     node.status({fill: "red", shape: "ring", text: "not discovered"});
 
     node.on('input', function(m) {
@@ -470,7 +500,7 @@ module.exports = function(RED) {
             if(m.hasOwnProperty('objectID')) {
               objectID = m.objectID;
             }
-            node.browseObjectID(objectID, function(err, browseReturn) {
+            node.mediaBrowser.browseObjectID(objectID, 0, 0, function(err, browseReturn) {
               if(!err) {
                 m.payload = 'browseReturn';
                 if(browseReturn.children) {
@@ -485,14 +515,21 @@ module.exports = function(RED) {
           } else if(m.payload === 'getAllItems') {
             if(m.hasOwnProperty('objectID')) {
               var objectID = m.objectID;
-              // TODO
+              node.mediaBrowser.browseAllChildren(objectID, function(err, allChildren) {
+                if(err) {
+                  node.warn(err);
+                } else {
+                  var sendObj = {payload: 'getAllItemsReturn', objectID: objectID, items: allChildren};
+                  node.send(sendObj);
+                }
+              });
             } else {
               node.warn('objectID missing');
             }
           } else if(m.payload === 'getMetadata') {
             if(m.hasOwnProperty('objectID')) {
               var objectID = m.objectID;
-              node.browseContent(objectID, 'metadata', true, null, function(err, result) {
+              node.mediaBrowser.browseContent(objectID, 'metadata', true, null, function(err, result) {
                 if(!err) {
                   if(result.obj && Object.keys(result.obj).length) {
                     var temp = result.obj;
@@ -526,160 +563,8 @@ module.exports = function(RED) {
     });
   }
 
-  upnpMediaContentBrowser.prototype.browseObjectID = function(objectID, callback) {
-    var node = this;
-    var returnObj = {};
-    node.browseContent(objectID, 'children', false, null, function(err, result) {
-      if(err) {
-        callback(err);
-      }
-      if(result.obj && Object.keys(result.obj).length) {
-        var temp = result.obj;
-        //Object.assign(temp, {rawXML: result.rawXML});
-        returnObj.children = temp;
-      }
-      node.browseContent(objectID, 'metadata', false, null, function(err, result) {
-        if(err) {
-          callback(err);
-        }
-        if(result.obj && Object.keys(result.obj).length) {
-          var temp = result.obj;
-          //Object.assign(temp, {rawXML: result.rawXML});
-          returnObj.metadata = temp;
-        }
-        callback(null, returnObj);
-      });
-    });
-  }
-
-  upnpMediaContentBrowser.prototype.browseContent = function(objectID, type, returnRaw, nonDefaultParameter = null, callback) {
-    var node = this;
-    var serviceType = 'urn:schemas-upnp-org:service:ContentDirectory:1';
-    var params = {ObjectID: objectID, Filter: "*", StartingIndex:0};
-    if(type === "children") {
-      params.BrowseFlag =  "BrowseDirectChildren";
-    } else if(type === "metadata") {
-      params.BrowseFlag =  "BrowseMetadata";
-    } else {
-      callback(new Error('unknown browse type'));
-    }
-    if(nonDefaultParameter) {
-      Object.assign(params, nonDefaultParameter);
-    }
-    node.upnpConfiguration.upnpClient.invokeActionParsed('Browse', params, serviceType, function(err, result) {
-      if(err) {
-        node.warn(err + '; RAW: ' + result);
-      } else {
-        if(result) {
-          var browseResult = result;
-          if(browseResult['BrowseResponse'] && browseResult['BrowseResponse']['Result']) {
-            browseResult = browseResult['BrowseResponse']['Result'];
-
-            var returnObj = {};
-            if(returnRaw) {
-              returnObj.rawXML = browseResult;
-            }
-
-            var parseXML = require('xml2js').parseString;
-            parseXML(browseResult, {explicitArray: true}, function(err, parsedData) {
-              if(err) {
-                node.warn(err);
-                callback(new Error(err));
-              } else {
-                if(parsedData['DIDL-Lite']) {
-                  returnObj.obj = parsedData['DIDL-Lite'];
-                  delete returnObj.obj['$'];
-                  callback(null, returnObj);
-                } else {
-                  node.warn("Problem with UPnP response");
-                  callback(new Error("Problem with UPnP response"));
-                }
-              }
-            });
-          }
-        }
-      }
-    });
-  }
-
   RED.nodes.registerType("upnp-mediaContentBrowser", upnpMediaContentBrowser);
 
-
-
   ////////////////////////////////////////////////////////////////////////////////
-  //< >  |
-
-    function upnpPlaylist(config) {
-      RED.nodes.createNode(this, config);
-      var node = this;
-
-      node.playlistItems = [];
-      node.currentIndex = -1;
-      node.transportState = 'stop';
-
-      node.on('input', function(m) {
-        if(m.hasOwnProperty('payload')) {
-          if(m.payload === 'append') {
-            if(m.hasOwnProperty('item')) {
-              node.playlistItems.push(m.item);
-              node.outputPlaylist();
-            } else {
-              node.warn('Need an item to append');
-            }
-          } else if(m.payload === 'next') {
-            if(node.playlistItems.length > 0) {
-              node.currentIndex++;
-              if(node.currentIndex >= node.playlistItems.length) {
-                node.currentIndex = 0;
-              }
-              node.outputPlayItem();
-            }
-          } else if(m.payload === 'previous') {
-            if(node.playlistItems.length > 0) {
-              node.currentIndex--;
-              if(node.currentIndex < 0) {
-                node.currentIndex = 0;
-              }
-              node.outputPlayItem();
-            }
-          } else if(m.payload === 'clear') {
-            node.playlistItems.length = 0;
-            node.currentIndex = -1;
-          } else if(m.payload === 'remove') {
-
-          } else if(m.payload === 'playSelect') {
-            if(m.hasOwnProperty('number')) {
-              if(node.playlistItems.length > 0 && m.number < node.playlistItems.length && m.number >= 0) {
-                node.currentIndex = m.number;
-                node.transportState = 'play';
-                node.outputPlayItem();
-              }
-            }
-          } else if(m.payload === 'play') {
-            node.transportState = 'play';
-          } else if(m.payload === 'stop') {
-            node.transportState = 'stop';
-          } else if(m.payload === 'pause') {
-            node.transportState = 'pause';
-          } else if(m.payload === 'event') {
-
-          }
-        }
-      });
-    }
-
-    upnpPlaylist.prototype.outputPlayItem = function() {
-      var node = this;
-      if(node.currentIndex >= 0 && node.currentIndex < node.playlistItems.length) {
-        var returnObj = {payload: 'play', item: node.playlistItems[node.currentIndex]};
-        node.send(returnObj);
-      }
-    }
-
-    upnpPlaylist.prototype.outputPlaylist = function() {
-      var node = this;
-      node.send({payload: 'playlist', item: node.playlistItems});
-    }
-
-    RED.nodes.registerType("upnp-playlist", upnpPlaylist);
+  //< > |
 }
