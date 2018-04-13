@@ -362,13 +362,18 @@ module.exports = function(RED) {
                     var temp = {};
                     if(parsedData['CurrentTrackURI']) temp.file = parsedData['CurrentTrackURI']['$']['val'];
                     if(parsedData['TransportState']) temp.state = parsedData['TransportState']['$']['val'];
-                    if(parsedData['CurrentTrackDuration']) temp.duration = parsedData['CurrentTrackDuration']['$']['val'];
-
+                    if(parsedData['CurrentTrackDuration']) {
+                      var duration = UPnPLib.parseUPnPTime(parsedData['CurrentTrackDuration']['$']['val']);
+                      if(duration > 0) {
+                        temp.duration = duration;
+                      }
+                    }
                     if(parsedData['CurrentTrackMetaData'] && parsedData['CurrentTrackMetaData']['$'] && parsedData['CurrentTrackMetaData']['$']['val']) {
                       UPnPLib.parseRawDIDLItem(parsedData['CurrentTrackMetaData']['$']['val'], function(err, metadata) {
                         if(err) {
                           node.warn(err);
                         } else {
+                          if(metadata.duration && temp.duration) delete metadata.duration;
                           Object.assign(temp, metadata);
                         }
                       });
@@ -415,14 +420,21 @@ module.exports = function(RED) {
           var parsedData = result['GetPositionInfoResponse'];
           var temp = {};
           if(parsedData['TrackURI']) temp.file = parsedData['TrackURI'];
-          if(parsedData['TrackDuration']) temp.duration = parsedData['TrackDuration'];
-          if(parsedData['RelTime']) temp.relTime = parsedData['RelTime'];
-          if(parsedData['AbsTime']) temp.absTime = parsedData['AbsTime'];
+          if(parsedData['TrackDuration']) {
+            var duration = UPnPLib.parseUPnPTime(parsedData['TrackDuration']);
+            if(duration > 0) {
+              temp.duration = duration;
+            }
+          }
+
+          if(parsedData['RelTime']) temp.relTime = UPnPLib.parseUPnPTime(parsedData['RelTime']);
+          if(parsedData['AbsTime']) temp.absTime = UPnPLib.parseUPnPTime(parsedData['AbsTime']);
           if(parsedData['TrackMetaData']) {
             UPnPLib.parseRawDIDLItem(parsedData['TrackMetaData'], function(err, metadata) {
               if(err) {
                 node.warn(err);
               } else {
+                if(metadata.duration && temp.duration) delete metadata.duration;
                 Object.assign(temp, metadata);
               }
             });
@@ -515,7 +527,7 @@ module.exports = function(RED) {
           } else if(m.payload === 'getAllItems') {
             if(m.hasOwnProperty('objectID')) {
               var objectID = m.objectID;
-              node.mediaBrowser.browseAllChildren(objectID, function(err, allChildren) {
+              node.mediaBrowser.browseAllChildren(objectID, false, function(err, allChildren) {
                 if(err) {
                   node.warn(err);
                 } else {
