@@ -1,7 +1,7 @@
 {
   "name": "node-red-contrib-upnp",
   "version": "0.0.1",
-  "description": "upnp",
+  "description": "UPnP control point for Node-RED",
   "main": "lib/upnpLib.js", 
   "keywords": [
     "node-red",

@@ -41,6 +41,9 @@ module.exports = function(RED) {
     node.useHardcodedDeviceDescriptionURL = n.useHardcodedDeviceDescriptionURL;
     node.hardcodedDeviceDescriptionURL = n.deviceDescriptionURL;
 
+    node.deviceDescriptionUrl = null;
+    node.upnpClient = null;
+
     node.deviceFound = false;
     node.eventServerListening = false;
     node.eventSubscriptions = new Map();
@@ -57,24 +60,24 @@ module.exports = function(RED) {
     // setTimeout(node.pollDevice.bind(this), 1000);
 
     node.on('close', function(done) {
+      function cleanUp() {
+        if(node.upnpClient) node.upnpClient.cleanUp();
+        node.eventEmitter.emit('deviceDiscovery', false);
+        node.deviceFound = false;
+        node.eventServerListening = false;
+      }
       if(node.pollTimeout) {
         clearTimeout(node.pollTimeout);
       }
       if(node.upnpClient) {
         var timeout = setTimeout(function() {
           node.warn('Timeout closing');
-          if(node.upnpClient) node.upnpClient.cleanUp();
-          node.eventEmitter.emit('deviceDiscovery', false);
-          node.deviceFound = false;
-          node.eventServerListening = false;
+          cleanUp();    
           done();
         }, 2000);
         node.unsubscribeAll(node.eventSubscriptions.keys().next().value, function() {
           clearTimeout(timeout);
-          if(node.upnpClient) node.upnpClient.cleanUp();
-          node.eventEmitter.emit('deviceDiscovery', false);
-          node.deviceFound = false;
-          node.eventServerListening = false;
+          cleanUp();
           done();
         });
       } else {
@@ -87,23 +90,22 @@ module.exports = function(RED) {
   upnpConfigurationNode.prototype.pollDevice = function() {
     var node = this;
     node.discovery(function(deviceDescriptionUrl) {
-      if(deviceDescriptionUrl) {
-        if(deviceDescriptionUrl !== node.deviceDescriptionUrl) {
+      function cleanUp() {
           node.eventEmitter.emit('deviceDiscovery', false);
           node.deviceDescriptionUrl = null;
           if(node.upnpClient) node.upnpClient.cleanUp();
           node.upnpClient = null;
           node.deviceFound = false;
           node.eventServerListening = false;
+      }
+
+      if(deviceDescriptionUrl) {
+        if(deviceDescriptionUrl !== node.deviceDescriptionUrl) {
+          cleanUp();
           node.initDevice(deviceDescriptionUrl);
         }
       } else {
-        node.eventEmitter.emit('deviceDiscovery', false);
-        node.deviceDescriptionUrl = null;
-        if(node.upnpClient) node.upnpClient.cleanUp();
-        node.upnpClient = null;
-        node.deviceFound = false;
-        node.eventServerListening = false;
+        cleanUp();
       }
     });
     node.pollTimeout = setTimeout(node.pollDevice.bind(node), POLLING_INTERVAL);
@@ -444,7 +446,7 @@ module.exports = function(RED) {
             if(parsedData.hasOwnProperty('Event') && parsedData['Event'].hasOwnProperty('InstanceID')) {
               parsedData = parsedData['Event']['InstanceID'];
 
-              console.log(parsedData);
+              //console.log(parsedData);
 
               var temp = {};
               if(parsedData['CurrentTrackURI']) temp.file = parsedData['CurrentTrackURI']['$']['val'];
