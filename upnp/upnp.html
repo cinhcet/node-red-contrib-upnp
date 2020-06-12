@@ -20,6 +20,14 @@
     <input type="text" id="node-config-input-uuid">
   </div>
   <div class="form-row">
+    <label for="node-config-input-useHardcodedDeviceDescriptionURL" style="width:auto">Use hardcoded device description URL</label>
+    <input type="checkbox" id="node-config-input-useHardcodedDeviceDescriptionURL" style="display:inline-block; width:auto; vertical-align:top;">
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-deviceDescriptionURL"><i class="icon-bookmark"></i> Device Description URL</label>
+    <input type="text" id="node-config-input-deviceDescriptionURL">
+  </div>
+  <div class="form-row">
     <label for="node-config-input-name"><i class="icon-tag"></i> Name</label>
     <input type="text" id="node-config-input-name" placeholder="Name">
   </div>
@@ -31,17 +39,35 @@
     defaults: {
       uuid: {
         value: '',
-        required: true
+        validate: function(uuid) {
+          if(uuid !== '') return true;
+          var useHardcoded = $("#node-config-input-useHardcodedDeviceDescriptionURL").is(":checked");
+          if(useHardcoded && $("#node-config-input-deviceDescriptionURL") !== '') return true;
+          return false;
+        }
+      },
+      useHardcodedDeviceDescriptionURL: {
+        value: false
+      },
+      deviceDescriptionURL: {
+        value: '',
+        validate: function(deviceDescriptionURL) {
+          var useHardcoded = $("#node-config-input-useHardcodedDeviceDescriptionURL").is(":checked");
+          if(!useHardcoded) return true;
+          if(deviceDescriptionURL !== '') return true;
+          return false;
+        }
       },
       name: {
         value: ''
       }
     },
     label: function() {
-      return this.name + ((this.name !== '') ? ':' : '') + this.uuid;
+      return this.name;
     }
   });
 </script>
+
 
 <!-- ////////////////////////////////////////////////////////////////////// -->
 
