@@ -1,5 +1,5 @@
 /**
- * Copyright 2017 cinhcet@gmail.com
+ * Copyright 2020 cinhcet@gmail.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,12 +47,18 @@ module.exports = function(RED) {
     node.deviceFound = false;
     node.eventServerListening = false;
     node.eventSubscriptions = new Map();
+    
+    node.printLog = true;
 
     node.eventEmitter.on('deviceDiscovery', function(discovered) {
       if(discovered) {
         node.log('Device ' + node.uuid + ' discovered');
+        node.printLog = true;
       } else {
-        node.log('Device ' + node.uuid + ' lost');
+        if(node.printLog) {
+          node.log('Device ' + node.uuid + ' lost');
+          node.printLog = false;
+        }
       }
     });
 
